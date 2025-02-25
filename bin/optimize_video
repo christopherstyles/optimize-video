@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+set -e  # Exit immediately on error
+
+# Check for required argument
+if [ -z "$1" ]; then
+  echo "Usage: bin/optimize_video <input_file>"
+  exit 1
+fi
+
+INPUT_FILE="$(realpath "$1")"
+INPUT_DIR="$(dirname "$INPUT_FILE")"
+BASENAME="$(basename -- "$INPUT_FILE")"
+FILENAME="${BASENAME%.*}"
+
+OUTPUT_DIR="${INPUT_DIR}/${FILENAME}"
+mkdir -p "$OUTPUT_DIR"
+
+echo "Processing video: $INPUT_FILE"
+
+# ---- Check if Audio Exists ----
+HAS_AUDIO=$(ffprobe -i "$INPUT_FILE" -show_streams -select_streams a -loglevel error | grep codec_type || true)
+
+# Define audio mapping conditionally
+if [[ -n "$HAS_AUDIO" ]]; then
+  AUDIO_FLAGS="-map 0:a:0 -c:a aac -b:a 128k -ac 2"
+  AUDIO_MAP=" a:0,name=audio"
+else
+  AUDIO_FLAGS=""
+  AUDIO_MAP=""
+fi
+
+# ---- WebM (VP9) Encoding ----
+WEBM_OUTPUT="${OUTPUT_DIR}/${FILENAME}.webm"
+echo "→ Creating WebM (VP9) version..."
+ffmpeg -y -i "$INPUT_FILE" -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -an "$WEBM_OUTPUT"
+
+# ---- MP4 (H.265) Encoding ----
+H265_OUTPUT="${OUTPUT_DIR}/${FILENAME}.mp4"
+echo "→ Creating MP4 (H.265) version..."
+ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow -an -movflags faststart "$H265_OUTPUT"
+
+# ---- MP4 (H.264) Encoding (Fallback) ----
+H264_OUTPUT="${OUTPUT_DIR}/${FILENAME}_h264.mp4"
+echo "→ Creating MP4 (H.264) fallback version..."
+ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow -an -movflags faststart "$H264_OUTPUT"
+
+# ---- HLS Encoding ----
+HLS_OUTPUT_DIR="${OUTPUT_DIR}/hls"
+mkdir -p "$HLS_OUTPUT_DIR"
+
+echo "→ Creating HLS (Adaptive Streaming) version..."
+
+ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
+  -filter_complex "[0:v]split=3[v360][v720][v1080]; \
+    [v360]scale=640:360[v360out]; \
+    [v720]scale=1280:720[v720out]; \
+    [v1080]scale=1920:1080[v1080out]" \
+  -map "[v360out]" -c:v libx264 -b:v 500k -maxrate 600k -bufsize 1200k \
+  -map "[v720out]" -c:v libx264 -b:v 1000k -maxrate 1200k -bufsize 2400k \
+  -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
+  $AUDIO_FLAGS \
+  -var_stream_map "v:0,agroup:vid v:1,agroup:vid v:2,agroup:vid${AUDIO_MAP}" \
+  -master_pl_name master.m3u8 -hls_time 4 -hls_playlist_type vod \
+  -f hls "$HLS_OUTPUT_DIR/%v/playlist.m3u8"
+
+echo "✅ HLS version created successfully at $HLS_OUTPUT_DIR"
+
+# ---- DASH Encoding ----
+DASH_OUTPUT_DIR="${OUTPUT_DIR}/dash"
+mkdir -p "$DASH_OUTPUT_DIR"
+
+echo "→ Creating DASH (Adaptive Streaming) version..."
+
+ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
+  -filter_complex "[0:v]split=3[v360][v720][v1080]; \
+    [v360]scale=640:360[v360out]; \
+    [v720]scale=1280:720[v720out]; \
+    [v1080]scale=1920:1080[v1080out]" \
+  -map "[v360out]" -c:v libx264 -b:v 500k -maxrate 600k -bufsize 1200k \
+  -map "[v720out]" -c:v libx264 -b:v 1000k -maxrate 1200k -bufsize 2400k \
+  -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
+  $AUDIO_FLAGS \
+  -adaptation_sets "id=0,streams=v ${AUDIO_MAP:+id=1,streams=a}" \
+  -f dash "$DASH_OUTPUT_DIR/manifest.mpd"
+
+echo "✅ DASH version created successfully at $DASH_OUTPUT_DIR"
+
+# ---- Extract Poster Image (First Frame) ----
+POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster.jpg"
+echo "→ Extracting poster image from first frame..."
+ffmpeg -y -i "$INPUT_FILE" -vf "select=eq(n\,0)" -frames:v 1 -update 1 -q:v 2 -pix_fmt yuvj420p "$POSTER_FULL"
+
+# ---- Generate Multiple Poster Sizes ----
+echo "→ Creating resized poster images..."
+
+POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w.jpg"
+POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080w.jpg"
+POSTER_1920="${OUTPUT_DIR}/${FILENAME}-poster-1920w.jpg"
+
+ffmpeg -y -i "$POSTER_FULL" -vf "scale=720:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_720"
+ffmpeg -y -i "$POSTER_FULL" -vf "scale=1080:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080"
+ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1920"
+
+echo "✅ Video optimization complete!"
+echo "Generated files in $OUTPUT_DIR:"
+echo "  - WebM: $WEBM_OUTPUT"
+echo "  - H.265 MP4: $H265_OUTPUT"
+echo "  - H.264 MP4: $H264_OUTPUT"
+echo "  - HLS: $HLS_OUTPUT_DIR/master.m3u8"
+echo "  - DASH: $DASH_OUTPUT_DIR/manifest.mpd"
+echo "  - Posters: $POSTER_720, $POSTER_1080, $POSTER_1920"
