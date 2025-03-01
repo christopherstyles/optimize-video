@@ -38,25 +38,25 @@ ffmpeg -y -i "$INPUT_FILE" -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -an "$W
 # ---- MP4 (H.265) Encoding ----
 H265_OUTPUT="${OUTPUT_DIR}/${FILENAME}.mp4"
 echo "→ Creating MP4 (H.265) version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow -an -movflags faststart "$H265_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow $AUDIO_FLAGS -movflags faststart "$H265_OUTPUT"
 
 # ---- MP4 (H.264) Encoding (Fallback) ----
 H264_OUTPUT="${OUTPUT_DIR}/${FILENAME}_h264.mp4"
 echo "→ Creating MP4 (H.264) fallback version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow -an -movflags faststart "$H264_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_OUTPUT"
 
 # ---- MP4 Lower Resolution Versions ----
 H264_720_OUTPUT="${OUTPUT_DIR}/${FILENAME}_720p.mp4"
 echo "→ Creating MP4 (H.264) 720p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:720" -c:v libx264 -crf 26 -preset slow -an -movflags faststart "$H264_720_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:720" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_720_OUTPUT"
 
 H264_480_OUTPUT="${OUTPUT_DIR}/${FILENAME}_480p.mp4"
 echo "→ Creating MP4 (H.264) 480p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:480" -c:v libx264 -crf 26 -preset slow -an -movflags faststart "$H264_480_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:480" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_480_OUTPUT"
 
 H264_360_OUTPUT="${OUTPUT_DIR}/${FILENAME}_360p.mp4"
 echo "→ Creating MP4 (H.264) 360p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:360" -c:v libx264 -crf 26 -preset slow -an -movflags faststart "$H264_360_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:360" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_360_OUTPUT"
 
 # ---- HLS Encoding ----
 HLS_OUTPUT_DIR="${OUTPUT_DIR}/hls"
