@@ -152,9 +152,71 @@ POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w.jpg"
 POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080w.jpg"
 POSTER_1920="${OUTPUT_DIR}/${FILENAME}-poster-1920w.jpg"
 
-ffmpeg -y -i "$POSTER_FULL" -vf "scale=720:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_720"
-ffmpeg -y -i "$POSTER_FULL" -vf "scale=1080:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080"
-ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1920"
+# Process poster images in parallel
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=720:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1080:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1920" > /dev/null 2>&1) &
+wait
+
+# Check if imagemin is installed
+if command -v imagemin &> /dev/null; then
+  echo "→ Optimizing poster images with imagemin/mozjpeg..."
+
+  OPTIMIZED_POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster-optimized.jpg"
+  OPTIMIZED_POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w-optimized.jpg"
+  OPTIMIZED_POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080w-optimized.jpg"
+  OPTIMIZED_POSTER_1920="${OUTPUT_DIR}/${FILENAME}-poster-1920w-optimized.jpg"
+
+  # Use imagemin with mozjpeg to optimize all poster images (in parallel)
+  (imagemin "$POSTER_FULL" --plugin=mozjpeg > "$OPTIMIZED_POSTER_FULL" 2>/dev/null) &
+  PID1=$!
+  (imagemin "$POSTER_720" --plugin=mozjpeg > "$OPTIMIZED_POSTER_720" 2>/dev/null) &
+  PID2=$!
+  (imagemin "$POSTER_1080" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1080" 2>/dev/null) &
+  PID3=$!
+  (imagemin "$POSTER_1920" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1920" 2>/dev/null) &
+  PID4=$!
+
+  # Show combined progress spinner
+  show_spinner "$PID1 $PID2 $PID3 $PID4" "  Optimizing images"
+  wait
+
+  # Replace original files with optimized versions if they're smaller
+  TOTAL_SAVED=0
+  TOTAL_ORIGINAL=0
+
+  for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_1080:$OPTIMIZED_POSTER_1080" "$POSTER_1920:$OPTIMIZED_POSTER_1920"; do
+    original="${img_pair%%:*}"
+    optimized="${img_pair##*:}"
+
+    # Get file sizes
+    original_size=$(stat -f%z "$original")
+    TOTAL_ORIGINAL=$((TOTAL_ORIGINAL + original_size))
+
+    if [[ -f "$optimized" ]]; then
+      optimized_size=$(stat -f%z "$optimized")
+
+      # Replace if optimized is smaller
+      if [[ $optimized_size -lt $original_size ]]; then
+        saved=$((original_size - optimized_size))
+        TOTAL_SAVED=$((TOTAL_SAVED + saved))
+        mv "$optimized" "$original"
+      else
+        rm "$optimized"
+      fi
+    fi
+  done
+
+  # Show overall optimization results
+  if [[ $TOTAL_SAVED -gt 0 ]]; then
+    percent=$((TOTAL_SAVED * 100 / TOTAL_ORIGINAL))
+    echo "  ✓ Total image optimization: ${percent}% smaller (saved $(numfmt --to=iec-i --suffix=B $TOTAL_SAVED))"
+  else
+    echo "  ✓ Images were already optimized"
+  fi
+else
+  echo "⚠️  imagemin not found. To optimize poster images, install with: npm install -g imagemin-cli imagemin-mozjpeg"
+fi
 
 echo "✅ Video optimization complete!"
 echo "Generated files in $OUTPUT_DIR:"
