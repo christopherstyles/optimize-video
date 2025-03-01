@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+cleanup() {
+  if [ $? -ne 0 ]; then
+    echo "Error occurred. Cleaning up..."
+    rm -rf "$OUTPUT_DIR"
+  fi
+}
+trap cleanup EXIT
+
 set -e  # Exit immediately on error
 
 # Check for required argument
