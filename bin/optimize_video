@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
 
+# Progress tracking function
+show_spinner() {
+  local pid=$1
+  local message=$2
+  local delay=0.1
+  local spinstr='|/-\'
+
+  while ps -p $pid > /dev/null; do
+    local temp=${spinstr#?}
+    printf "\r%s [%c]  " "$message" "$spinstr"
+    local spinstr=$temp${spinstr%"$temp"}
+    sleep $delay
+  done
+
+  printf "\r%s [✓]  \n" "$message"
+}
+
 cleanup() {
   if [ $? -ne 0 ]; then
     echo "Error occurred. Cleaning up..."
@@ -27,13 +44,16 @@ mkdir -p "$OUTPUT_DIR"
 echo "Processing video: $INPUT_FILE"
 
 # ---- Check if Audio Exists ----
+echo -n "→ Detecting audio streams... "
 HAS_AUDIO=$(ffprobe -i "$INPUT_FILE" -show_streams -select_streams a -loglevel error | grep codec_type || true)
 
 # Define audio mapping conditionally
 if [[ -n "$HAS_AUDIO" ]]; then
+  echo "[FOUND]"
   AUDIO_FLAGS="-map 0:a:0 -c:a aac -b:a 128k -ac 2"
   AUDIO_MAP=" a:0,name=audio"
 else
+  echo "[NONE]"
   AUDIO_FLAGS=""
   AUDIO_MAP=""
 fi
@@ -41,37 +61,45 @@ fi
 # ---- WebM (VP9) Encoding ----
 WEBM_OUTPUT="${OUTPUT_DIR}/${FILENAME}.webm"
 echo "→ Creating WebM (VP9) version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -an "$WEBM_OUTPUT"
+# Run ffmpeg in background with log redirected
+ffmpeg -y -i "$INPUT_FILE" -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -an "$WEBM_OUTPUT" > /dev/null 2>&1 &
+# Get process ID and show spinner
+show_spinner $! "  Processing WebM"
 
 # ---- MP4 (H.265) Encoding ----
 H265_OUTPUT="${OUTPUT_DIR}/${FILENAME}.mp4"
 echo "→ Creating MP4 (H.265) version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow -progress pipe:1 $AUDIO_FLAGS -movflags faststart "$H265_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow $AUDIO_FLAGS -movflags faststart "$H265_OUTPUT" > /dev/null 2>&1 &
+show_spinner $! "  Processing H.265"
 
 # ---- MP4 (H.264) Encoding (Fallback) ----
 H264_OUTPUT="${OUTPUT_DIR}/${FILENAME}_h264.mp4"
 echo "→ Creating MP4 (H.264) fallback version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow -progress pipe:1 $AUDIO_FLAGS -movflags faststart "$H264_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_OUTPUT" > /dev/null 2>&1 &
+show_spinner $! "  Processing H.264"
 
 # ---- MP4 Lower Resolution Versions ----
 H264_720_OUTPUT="${OUTPUT_DIR}/${FILENAME}_720p.mp4"
 echo "→ Creating MP4 (H.264) 720p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:720" -c:v libx264 -crf 26 -preset slow -progress pipe:1 $AUDIO_FLAGS -movflags faststart "$H264_720_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:720" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_720_OUTPUT" > /dev/null 2>&1 &
+show_spinner $! "  Processing 720p"
 
 H264_480_OUTPUT="${OUTPUT_DIR}/${FILENAME}_480p.mp4"
 echo "→ Creating MP4 (H.264) 480p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:480" -c:v libx264 -crf 26 -preset slow -progress pipe:1 $AUDIO_FLAGS -movflags faststart "$H264_480_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:480" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_480_OUTPUT" > /dev/null 2>&1 &
+show_spinner $! "  Processing 480p"
 
 H264_360_OUTPUT="${OUTPUT_DIR}/${FILENAME}_360p.mp4"
 echo "→ Creating MP4 (H.264) 360p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:360" -c:v libx264 -crf 26 -preset slow -progress pipe:1 $AUDIO_FLAGS -movflags faststart "$H264_360_OUTPUT"
+ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:360" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_360_OUTPUT" > /dev/null 2>&1 &
+show_spinner $! "  Processing 360p"
 
 # ---- HLS Encoding ----
 HLS_OUTPUT_DIR="${OUTPUT_DIR}/hls"
 mkdir -p "$HLS_OUTPUT_DIR"
 
 echo "→ Creating HLS (Adaptive Streaming) version..."
-
+(
 ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
   -filter_complex "[0:v]split=3[v360][v720][v1080]; \
     [v360]scale=640:360[v360out]; \
@@ -83,7 +111,9 @@ ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
   $AUDIO_FLAGS \
   -var_stream_map "v:0,agroup:vid v:1,agroup:vid v:2,agroup:vid${AUDIO_MAP}" \
   -master_pl_name master.m3u8 -hls_time 4 -hls_playlist_type vod \
-  -f hls "$HLS_OUTPUT_DIR/%v/playlist.m3u8"
+  -f hls "$HLS_OUTPUT_DIR/%v/playlist.m3u8" > /dev/null 2>&1
+) &
+show_spinner $! "  Processing HLS streams"
 
 echo "✅ HLS version created successfully at $HLS_OUTPUT_DIR"
 
@@ -92,7 +122,7 @@ DASH_OUTPUT_DIR="${OUTPUT_DIR}/dash"
 mkdir -p "$DASH_OUTPUT_DIR"
 
 echo "→ Creating DASH (Adaptive Streaming) version..."
-
+(
 ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
   -filter_complex "[0:v]split=3[v360][v720][v1080]; \
     [v360]scale=640:360[v360out]; \
@@ -103,14 +133,17 @@ ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
   -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
   $AUDIO_FLAGS \
   -adaptation_sets "id=0,streams=v ${AUDIO_MAP:+id=1,streams=a}" \
-  -f dash "$DASH_OUTPUT_DIR/manifest.mpd"
+  -f dash "$DASH_OUTPUT_DIR/manifest.mpd" > /dev/null 2>&1
+) &
+show_spinner $! "  Processing DASH streams"
 
 echo "✅ DASH version created successfully at $DASH_OUTPUT_DIR"
 
 # ---- Extract Poster Image (First Frame) ----
 POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster.jpg"
 echo "→ Extracting poster image from first frame..."
-ffmpeg -y -i "$INPUT_FILE" -vf "select=eq(n\,0)" -frames:v 1 -update 1 -q:v 2 -pix_fmt yuvj420p "$POSTER_FULL"
+ffmpeg -y -i "$INPUT_FILE" -vf "select=eq(n\,0)" -frames:v 1 -update 1 -q:v 2 -pix_fmt yuvj420p "$POSTER_FULL" > /dev/null 2>&1 &
+show_spinner $! "  Extracting poster"
 
 # ---- Generate Multiple Poster Sizes ----
 echo "→ Creating resized poster images..."
