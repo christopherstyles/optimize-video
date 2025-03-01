@@ -149,13 +149,13 @@ show_spinner $! "  Extracting poster"
 echo "→ Creating resized poster images..."
 
 POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w.jpg"
-POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080w.jpg"
-POSTER_1920="${OUTPUT_DIR}/${FILENAME}-poster-1920w.jpg"
+POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480w.jpg"
+POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360w.jpg"
 
-# Process poster images in parallel
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=720:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1080:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:-1" -frames:v 1 -update 1 -q:v 2 "$POSTER_1920" > /dev/null 2>&1) &
+# Process poster images in parallel - scale height to match video dimensions
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=-2:720" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=-2:480" -frames:v 1 -update 1 -q:v 2 "$POSTER_480" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=-2:360" -frames:v 1 -update 1 -q:v 2 "$POSTER_360" > /dev/null 2>&1) &
 wait
 
 # Check if imagemin is installed
@@ -164,17 +164,17 @@ if command -v imagemin &> /dev/null; then
 
   OPTIMIZED_POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster-optimized.jpg"
   OPTIMIZED_POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w-optimized.jpg"
-  OPTIMIZED_POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080w-optimized.jpg"
-  OPTIMIZED_POSTER_1920="${OUTPUT_DIR}/${FILENAME}-poster-1920w-optimized.jpg"
+  OPTIMIZED_POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480w-optimized.jpg"
+  OPTIMIZED_POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360w-optimized.jpg"
 
   # Use imagemin with mozjpeg to optimize all poster images (in parallel)
   (imagemin "$POSTER_FULL" --plugin=mozjpeg > "$OPTIMIZED_POSTER_FULL" 2>/dev/null) &
   PID1=$!
   (imagemin "$POSTER_720" --plugin=mozjpeg > "$OPTIMIZED_POSTER_720" 2>/dev/null) &
   PID2=$!
-  (imagemin "$POSTER_1080" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1080" 2>/dev/null) &
+  (imagemin "$POSTER_480" --plugin=mozjpeg > "$OPTIMIZED_POSTER_480" 2>/dev/null) &
   PID3=$!
-  (imagemin "$POSTER_1920" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1920" 2>/dev/null) &
+  (imagemin "$POSTER_360" --plugin=mozjpeg > "$OPTIMIZED_POSTER_360" 2>/dev/null) &
   PID4=$!
 
   # Show combined progress spinner
@@ -185,7 +185,7 @@ if command -v imagemin &> /dev/null; then
   TOTAL_SAVED=0
   TOTAL_ORIGINAL=0
 
-  for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_1080:$OPTIMIZED_POSTER_1080" "$POSTER_1920:$OPTIMIZED_POSTER_1920"; do
+  for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_480:$OPTIMIZED_POSTER_480" "$POSTER_360:$OPTIMIZED_POSTER_360"; do
     original="${img_pair%%:*}"
     optimized="${img_pair##*:}"
 
@@ -228,4 +228,4 @@ echo "  - 480p MP4: $H264_480_OUTPUT"
 echo "  - 360p MP4: $H264_360_OUTPUT"
 echo "  - HLS: $HLS_OUTPUT_DIR/master.m3u8"
 echo "  - DASH: $DASH_OUTPUT_DIR/manifest.mpd"
-echo "  - Posters: $POSTER_720, $POSTER_1080, $POSTER_1920"
+echo "  - Posters: $POSTER_720, $POSTER_480, $POSTER_360"
