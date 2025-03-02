@@ -101,15 +101,17 @@ mkdir -p "$HLS_OUTPUT_DIR"
 echo "→ Creating HLS (Adaptive Streaming) version..."
 (
 ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
-  -filter_complex "[0:v]split=3[v360][v720][v1080]; \
+  -filter_complex "[0:v]split=4[v360][v480][v720][v1080]; \
     [v360]scale=640:360[v360out]; \
+    [v480]scale=854:480[v480out]; \
     [v720]scale=1280:720[v720out]; \
     [v1080]scale=1920:1080[v1080out]" \
-  -map "[v360out]" -c:v libx264 -b:v 500k -maxrate 600k -bufsize 1200k \
-  -map "[v720out]" -c:v libx264 -b:v 1000k -maxrate 1200k -bufsize 2400k \
+  -map "[v360out]" -c:v libx264 -b:v 400k -maxrate 500k -bufsize 1000k \
+  -map "[v480out]" -c:v libx264 -b:v 700k -maxrate 800k -bufsize 1600k \
+  -map "[v720out]" -c:v libx264 -b:v 1500k -maxrate 1800k -bufsize 3600k \
   -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
   $AUDIO_FLAGS \
-  -var_stream_map "v:0,agroup:vid v:1,agroup:vid v:2,agroup:vid${AUDIO_MAP}" \
+  -var_stream_map "v:0,agroup:vid v:1,agroup:vid v:2,agroup:vid v:3,agroup:vid${AUDIO_MAP}" \
   -master_pl_name master.m3u8 -hls_time 4 -hls_playlist_type vod \
   -f hls "$HLS_OUTPUT_DIR/%v/playlist.m3u8" > /dev/null 2>&1
 ) &
@@ -121,19 +123,16 @@ echo "✅ HLS version created successfully at $HLS_OUTPUT_DIR"
 DASH_OUTPUT_DIR="${OUTPUT_DIR}/dash"
 mkdir -p "$DASH_OUTPUT_DIR"
 
-echo "→ Creating DASH (Adaptive Streaming) version..."
+echo "→ Creating DASH (Adaptive Streaming)..."
 (
-ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
-  -filter_complex "[0:v]split=3[v360][v720][v1080]; \
-    [v360]scale=640:360[v360out]; \
-    [v720]scale=1280:720[v720out]; \
-    [v1080]scale=1920:1080[v1080out]" \
-  -map "[v360out]" -c:v libx264 -b:v 500k -maxrate 600k -bufsize 1200k \
-  -map "[v720out]" -c:v libx264 -b:v 1000k -maxrate 1200k -bufsize 2400k \
-  -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
+ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -keyint_min 48 -sc_threshold 0 \
+  -vf "scale=640:360" -c:v libx264 -b:v 400k -maxrate 500k -bufsize 1000k -map 0:v -map 0:v -map 0:v -map 0:v \
+  -vf "scale=854:480" -c:v libx264 -b:v 700k -maxrate 800k -bufsize 1600k \
+  -vf "scale=1280:720" -c:v libx264 -b:v 1500k -maxrate 1800k -bufsize 3600k \
+  -vf "scale=1920:1080" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
   $AUDIO_FLAGS \
-  -adaptation_sets "id=0,streams=v ${AUDIO_MAP:+id=1,streams=a}" \
-  -f dash "$DASH_OUTPUT_DIR/manifest.mpd" > /dev/null 2>&1
+  -f dash -use_timeline 1 -use_template 1 -seg_duration 4 -hls_playlist 1 \
+  "$DASH_OUTPUT_DIR/manifest.mpd" > /dev/null 2>&1
 ) &
 show_spinner $! "  Processing DASH streams"
 
@@ -148,14 +147,16 @@ show_spinner $! "  Extracting poster"
 # ---- Generate Multiple Poster Sizes ----
 echo "→ Creating resized poster images..."
 
-POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w.jpg"
-POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480w.jpg"
-POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360w.jpg"
+POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080p.jpg"
+POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720p.jpg"
+POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480p.jpg"
+POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360p.jpg"
 
-# Process poster images in parallel - scale height to match video dimensions
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=-2:720" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=-2:480" -frames:v 1 -update 1 -q:v 2 "$POSTER_480" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=-2:360" -frames:v 1 -update 1 -q:v 2 "$POSTER_360" > /dev/null 2>&1) &
+# Process poster images in parallel - match dimensions used in HLS/DASH
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:1080" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1280:720" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=854:480" -frames:v 1 -update 1 -q:v 2 "$POSTER_480" > /dev/null 2>&1) &
+(ffmpeg -y -i "$POSTER_FULL" -vf "scale=640:360" -frames:v 1 -update 1 -q:v 2 "$POSTER_360" > /dev/null 2>&1) &
 wait
 
 # Check if imagemin is installed
@@ -163,29 +164,32 @@ if command -v imagemin &> /dev/null; then
   echo "→ Optimizing poster images with imagemin/mozjpeg..."
 
   OPTIMIZED_POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster-optimized.jpg"
-  OPTIMIZED_POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720w-optimized.jpg"
-  OPTIMIZED_POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480w-optimized.jpg"
-  OPTIMIZED_POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360w-optimized.jpg"
+  OPTIMIZED_POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080p-optimized.jpg"
+  OPTIMIZED_POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720p-optimized.jpg"
+  OPTIMIZED_POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480p-optimized.jpg"
+  OPTIMIZED_POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360p-optimized.jpg"
 
   # Use imagemin with mozjpeg to optimize all poster images (in parallel)
   (imagemin "$POSTER_FULL" --plugin=mozjpeg > "$OPTIMIZED_POSTER_FULL" 2>/dev/null) &
   PID1=$!
-  (imagemin "$POSTER_720" --plugin=mozjpeg > "$OPTIMIZED_POSTER_720" 2>/dev/null) &
+  (imagemin "$POSTER_1080" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1080" 2>/dev/null) &
   PID2=$!
-  (imagemin "$POSTER_480" --plugin=mozjpeg > "$OPTIMIZED_POSTER_480" 2>/dev/null) &
+  (imagemin "$POSTER_720" --plugin=mozjpeg > "$OPTIMIZED_POSTER_720" 2>/dev/null) &
   PID3=$!
-  (imagemin "$POSTER_360" --plugin=mozjpeg > "$OPTIMIZED_POSTER_360" 2>/dev/null) &
+  (imagemin "$POSTER_480" --plugin=mozjpeg > "$OPTIMIZED_POSTER_480" 2>/dev/null) &
   PID4=$!
+  (imagemin "$POSTER_360" --plugin=mozjpeg > "$OPTIMIZED_POSTER_360" 2>/dev/null) &
+  PID5=$!
 
   # Show combined progress spinner
-  show_spinner "$PID1 $PID2 $PID3 $PID4" "  Optimizing images"
+  show_spinner "$PID1 $PID2 $PID3 $PID4 $PID5" "  Optimizing images"
   wait
 
   # Replace original files with optimized versions if they're smaller
   TOTAL_SAVED=0
   TOTAL_ORIGINAL=0
 
-  for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_480:$OPTIMIZED_POSTER_480" "$POSTER_360:$OPTIMIZED_POSTER_360"; do
+  for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_1080:$OPTIMIZED_POSTER_1080" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_480:$OPTIMIZED_POSTER_480" "$POSTER_360:$OPTIMIZED_POSTER_360"; do
     original="${img_pair%%:*}"
     optimized="${img_pair##*:}"
 
@@ -226,6 +230,6 @@ echo "  - H.264 MP4: $H264_OUTPUT"
 echo "  - 720p MP4: $H264_720_OUTPUT"
 echo "  - 480p MP4: $H264_480_OUTPUT"
 echo "  - 360p MP4: $H264_360_OUTPUT"
-echo "  - HLS: $HLS_OUTPUT_DIR/master.m3u8"
-echo "  - DASH: $DASH_OUTPUT_DIR/manifest.mpd"
-echo "  - Posters: $POSTER_720, $POSTER_480, $POSTER_360"
+echo "  - HLS: $HLS_OUTPUT_DIR/master.m3u8 (1080p, 720p, 480p, 360p)"
+echo "  - DASH: $DASH_OUTPUT_DIR/manifest.mpd (1080p, 720p, 480p, 360p)"
+echo "  - Posters: $POSTER_1080, $POSTER_720, $POSTER_480, $POSTER_360"
