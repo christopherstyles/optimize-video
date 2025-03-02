@@ -1,18 +1,28 @@
-# :movie_camera: :sparkles: `optimize-video`
+# Create Optimized Videos Script
 
-This lil' utility is a Bash script that optimizes a video file for multiple formats and devices. It:
+A bash script that optimizes videos for web delivery by generating multiple formats:
+- WebM (VP9)
+- MP4 (H.265/HEVC)
+- MP4 (H.264) in various resolutions
+- HLS (HTTP Live Streaming) adaptive streaming
+- DASH (Dynamic Adaptive Streaming over HTTP)
+- Poster images in multiple sizes
 
-- **Generates adaptive streaming (HLS & DASH)** for fast, scalable playback.
-- **Encodes WebM (VP9) and MP4 (H.265 & H.264)** for broad compatibility.
-- **Extracts a poster image** and resizes it for different screen sizes.
-- **Automatically detects audio** and includes it if available.
+## Requirements
 
-## Install
+- FFmpeg
+- imagemin-cli and imagemin-mozjpeg (optional, for poster optimization)
 
-Ensure you have [ffmpeg](https://ffmpeg.org/download.html) installed. If you're on a Mac, install it eaily with [Homebrew](https://brew.sh/):
+## Installation
 
+1. Clone this repository
+2. Make the script executable:
 ```sh
-brew install ffmpeg
+chmod +x optimize_video.sh
+```
+3. (Optional) Install imagemin for poster optimization:
+```sh
+npm install -g imagemin-cli imagemin-mozjpeg
 ```
 
 ## 🚀 **Usage**
@@ -94,6 +104,33 @@ dash/
 
 ---
 
+### OPTIONS
+
+#### Variant Selection
+
+You can specify exactly which variants to generate:
+
+Examples:
+- `bin/optimize_video input.mp4 --variants=[webm,360]` - Only generate WebM and 360p MP4 versions
+- `bin/optimize_video input.mp4 --variants=[mp4,posters]` - Generate all MP4 variants and poster images
+- `bin/optimize_video input.mp4 --variants=[all]` - Generate all formats (same as default)
+- `bin/optimize_video input.mp4 --variants=[webm,h265]` - Generate only WebM and H.265 formats
+- `bin/optimize_video input.mp4 --variants=[posters]` - Generate only poster images
+
+#### Skip Specific Variants
+
+Alternatively, you can generate everything except specific formats:
+
+Examples:
+- `bin/optimize_video input.mp4 --no-dash --no-hls` - Generate everything except streaming formats
+- `bin/optimize_video input.mp4 --no-webm --no-posters` - Skip WebM and poster generation
+
+Skip streaming formats:
+
+#### Other Options
+
+---
+
 ## 🎯 **Why HLS + DASH?**
 | Feature | HLS | DASH |
 |---------|-----|------|
@@ -148,3 +185,42 @@ videos/my_video/
 - **MP4 is the best fallback for universal compatibility.**
 - **H.265 (HEVC)** offers better compression but has more limited browser support.
 - **Adaptive streaming** dynamically adjusts quality based on network conditions.
+
+## Output
+
+The script creates a directory with the same name as the input file and generates all variants inside it. The final output includes:
+
+- WebM (VP9) video
+- H.265 MP4 video (main file)
+- H.264 MP4 video (fallback)
+- H.264 MP4 in 720p, 480p, and 360p resolutions
+- HLS adaptive streaming folder with master playlist
+- DASH adaptive streaming folder with manifest
+- Poster images in full resolution, 1080p, 720p, 480p, and 360p
+
+## Examples
+
+Basic usage (generate all formats):
+```sh
+bin/optimize_video my_video.mp4
+```
+
+Generate only specific variants:
+```sh
+bin/optimize_video my_video.mp4 --variants=[webm,h265,posters]
+```
+
+Skip streaming formats (good for quick processing):
+```sh
+bin/optimize_video my_video.mp4 --no-hls --no-dash
+```
+
+Generate only poster images:
+```sh
+bin/optimize_video my_video.mp4 --variants=[posters]
+```
+
+Process multiple files in a batch:
+```sh
+for video in *.mp4; do bin/optimize_video "$video"; done
+```

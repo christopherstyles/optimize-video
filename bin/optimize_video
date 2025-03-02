@@ -27,13 +27,177 @@ trap cleanup EXIT
 
 set -e  # Exit immediately on error
 
-# Check for required argument
-if [ -z "$1" ]; then
-  echo "Usage: bin/optimize_video <input_file>"
+# Default values
+GENERATE_WEBM=true
+GENERATE_H265=true
+GENERATE_H264=true
+GENERATE_H264_720=true
+GENERATE_H264_480=true
+GENERATE_H264_360=true
+GENERATE_HLS=true
+GENERATE_DASH=true
+GENERATE_POSTERS=true
+VARIANTS_SPECIFIED=false
+
+# Usage information
+usage() {
+  echo "Usage: bin/optimize_video <input_file> [OPTIONS]"
+  echo
+  echo "OPTIONS:"
+  echo "  --variants=[list]   Specify which variants to generate (comma-separated)"
+  echo "                      Available: webm, h265, h264, 720, 480, 360, hls, dash, posters, mp4, all"
+  echo "                      Example: --variants=[webm,h265,posters]"
+  echo "                      'mp4' includes h265, h264, and all resolutions"
+  echo
+  echo "  --no-webm           Skip WebM generation"
+  echo "  --no-h265           Skip H.265 MP4 generation"
+  echo "  --no-h264           Skip H.264 MP4 generation"
+  echo "  --no-720            Skip 720p MP4 generation"
+  echo "  --no-480            Skip 480p MP4 generation"
+  echo "  --no-360            Skip 360p MP4 generation"
+  echo "  --no-hls            Skip HLS generation"
+  echo "  --no-dash           Skip DASH generation"
+  echo "  --no-posters        Skip poster image generation"
+  echo "  --no-mp4            Skip all MP4 formats"
+  echo
+  echo "  -h, --help          Show this help message"
   exit 1
+}
+
+# Parse arguments
+INPUT_FILE=""
+ARGS=()
+
+for arg in "$@"; do
+  case $arg in
+    -h|--help)
+      usage
+      ;;
+    --variants=*)
+      VARIANTS_SPECIFIED=true
+      # Reset all to false first since we're specifying exactly what we want
+      GENERATE_WEBM=false
+      GENERATE_H265=false
+      GENERATE_H264=false
+      GENERATE_H264_720=false
+      GENERATE_H264_480=false
+      GENERATE_H264_360=false
+      GENERATE_HLS=false
+      GENERATE_DASH=false
+      GENERATE_POSTERS=false
+
+      # Extract the variants list and process it
+      VARIANTS=${arg#*=}
+      # Remove brackets if they exist
+      VARIANTS=${VARIANTS#[}
+      VARIANTS=${VARIANTS%]}
+
+      IFS=',' read -r -a VARIANT_ARRAY <<< "$VARIANTS"
+      for variant in "${VARIANT_ARRAY[@]}"; do
+        case $variant in
+          webm)
+            GENERATE_WEBM=true
+            ;;
+          h265)
+            GENERATE_H265=true
+            ;;
+          h264)
+            GENERATE_H264=true
+            ;;
+          720)
+            GENERATE_H264_720=true
+            ;;
+          480)
+            GENERATE_H264_480=true
+            ;;
+          360)
+            GENERATE_H264_360=true
+            ;;
+          hls)
+            GENERATE_HLS=true
+            ;;
+          dash)
+            GENERATE_DASH=true
+            ;;
+          posters)
+            GENERATE_POSTERS=true
+            ;;
+          mp4)
+            GENERATE_H265=true
+            GENERATE_H264=true
+            GENERATE_H264_720=true
+            GENERATE_H264_480=true
+            GENERATE_H264_360=true
+            ;;
+          all)
+            GENERATE_WEBM=true
+            GENERATE_H265=true
+            GENERATE_H264=true
+            GENERATE_H264_720=true
+            GENERATE_H264_480=true
+            GENERATE_H264_360=true
+            GENERATE_HLS=true
+            GENERATE_DASH=true
+            GENERATE_POSTERS=true
+            ;;
+        esac
+      done
+      ;;
+    --no-webm)
+      GENERATE_WEBM=false
+      ;;
+    --no-h265)
+      GENERATE_H265=false
+      ;;
+    --no-h264)
+      GENERATE_H264=false
+      ;;
+    --no-720)
+      GENERATE_H264_720=false
+      ;;
+    --no-480)
+      GENERATE_H264_480=false
+      ;;
+    --no-360)
+      GENERATE_H264_360=false
+      ;;
+    --no-hls)
+      GENERATE_HLS=false
+      ;;
+    --no-dash)
+      GENERATE_DASH=false
+      ;;
+    --no-posters)
+      GENERATE_POSTERS=false
+      ;;
+    --no-mp4)
+      GENERATE_H265=false
+      GENERATE_H264=false
+      GENERATE_H264_720=false
+      GENERATE_H264_480=false
+      GENERATE_H264_360=false
+      ;;
+    -*)
+      echo "Unknown option: $arg"
+      usage
+      ;;
+    *)
+      # First non-option argument is the input file
+      if [ -z "$INPUT_FILE" ]; then
+        INPUT_FILE=$arg
+      else
+        ARGS+=("$arg")
+      fi
+      ;;
+  esac
+done
+
+# Check for required argument
+if [ -z "$INPUT_FILE" ]; then
+  usage
 fi
 
-INPUT_FILE="$(realpath "$1")"
+INPUT_FILE="$(realpath "$INPUT_FILE")"
 INPUT_DIR="$(dirname "$INPUT_FILE")"
 BASENAME="$(basename -- "$INPUT_FILE")"
 FILENAME="${BASENAME%.*}"
@@ -59,167 +223,206 @@ else
 fi
 
 # ---- WebM (VP9) Encoding ----
-WEBM_OUTPUT="${OUTPUT_DIR}/${FILENAME}.webm"
-echo "→ Creating WebM (VP9) version..."
-# Run ffmpeg in background with log redirected
-ffmpeg -y -i "$INPUT_FILE" -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -an "$WEBM_OUTPUT" > /dev/null 2>&1 &
-# Get process ID and show spinner
-show_spinner $! "  Processing WebM"
+if [ "$GENERATE_WEBM" = true ]; then
+  WEBM_OUTPUT="${OUTPUT_DIR}/${FILENAME}.webm"
+  echo "→ Creating WebM (VP9) version..."
+  # Run ffmpeg in background with log redirected
+  ffmpeg -y -i "$INPUT_FILE" -c:v libvpx-vp9 -crf 32 -b:v 0 -deadline good -an "$WEBM_OUTPUT" > /dev/null 2>&1 &
+  # Get process ID and show spinner
+  show_spinner $! "  Processing WebM"
+else
+  WEBM_OUTPUT="(not generated)"
+fi
 
 # ---- MP4 (H.265) Encoding ----
-H265_OUTPUT="${OUTPUT_DIR}/${FILENAME}.mp4"
-echo "→ Creating MP4 (H.265) version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow $AUDIO_FLAGS -movflags faststart "$H265_OUTPUT" > /dev/null 2>&1 &
-show_spinner $! "  Processing H.265"
+if [ "$GENERATE_H265" = true ]; then
+  H265_OUTPUT="${OUTPUT_DIR}/${FILENAME}.mp4"
+  echo "→ Creating MP4 (H.265) version..."
+  ffmpeg -y -i "$INPUT_FILE" -c:v libx265 -crf 28 -preset slow $AUDIO_FLAGS -movflags faststart "$H265_OUTPUT" > /dev/null 2>&1 &
+  show_spinner $! "  Processing H.265"
+else
+  H265_OUTPUT="(not generated)"
+fi
 
 # ---- MP4 (H.264) Encoding (Fallback) ----
-H264_OUTPUT="${OUTPUT_DIR}/${FILENAME}_h264.mp4"
-echo "→ Creating MP4 (H.264) fallback version..."
-ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_OUTPUT" > /dev/null 2>&1 &
-show_spinner $! "  Processing H.264"
+if [ "$GENERATE_H264" = true ]; then
+  H264_OUTPUT="${OUTPUT_DIR}/${FILENAME}_h264.mp4"
+  echo "→ Creating MP4 (H.264) fallback version..."
+  ffmpeg -y -i "$INPUT_FILE" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_OUTPUT" > /dev/null 2>&1 &
+  show_spinner $! "  Processing H.264"
+else
+  H264_OUTPUT="(not generated)"
+fi
 
 # ---- MP4 Lower Resolution Versions ----
-H264_720_OUTPUT="${OUTPUT_DIR}/${FILENAME}_720p.mp4"
-echo "→ Creating MP4 (H.264) 720p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:720" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_720_OUTPUT" > /dev/null 2>&1 &
-show_spinner $! "  Processing 720p"
+if [ "$GENERATE_H264_720" = true ]; then
+  H264_720_OUTPUT="${OUTPUT_DIR}/${FILENAME}_720p.mp4"
+  echo "→ Creating MP4 (H.264) 720p version..."
+  ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:720" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_720_OUTPUT" > /dev/null 2>&1 &
+  show_spinner $! "  Processing 720p"
+else
+  H264_720_OUTPUT="(not generated)"
+fi
 
-H264_480_OUTPUT="${OUTPUT_DIR}/${FILENAME}_480p.mp4"
-echo "→ Creating MP4 (H.264) 480p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:480" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_480_OUTPUT" > /dev/null 2>&1 &
-show_spinner $! "  Processing 480p"
+if [ "$GENERATE_H264_480" = true ]; then
+  H264_480_OUTPUT="${OUTPUT_DIR}/${FILENAME}_480p.mp4"
+  echo "→ Creating MP4 (H.264) 480p version..."
+  ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:480" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_480_OUTPUT" > /dev/null 2>&1 &
+  show_spinner $! "  Processing 480p"
+else
+  H264_480_OUTPUT="(not generated)"
+fi
 
-H264_360_OUTPUT="${OUTPUT_DIR}/${FILENAME}_360p.mp4"
-echo "→ Creating MP4 (H.264) 360p version..."
-ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:360" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_360_OUTPUT" > /dev/null 2>&1 &
-show_spinner $! "  Processing 360p"
+if [ "$GENERATE_H264_360" = true ]; then
+  H264_360_OUTPUT="${OUTPUT_DIR}/${FILENAME}_360p.mp4"
+  echo "→ Creating MP4 (H.264) 360p version..."
+  ffmpeg -y -i "$INPUT_FILE" -vf "scale=-2:360" -c:v libx264 -crf 26 -preset slow $AUDIO_FLAGS -movflags faststart "$H264_360_OUTPUT" > /dev/null 2>&1 &
+  show_spinner $! "  Processing 360p"
+else
+  H264_360_OUTPUT="(not generated)"
+fi
 
 # ---- HLS Encoding ----
-HLS_OUTPUT_DIR="${OUTPUT_DIR}/hls"
-mkdir -p "$HLS_OUTPUT_DIR"
+if [ "$GENERATE_HLS" = true ]; then
+  HLS_OUTPUT_DIR="${OUTPUT_DIR}/hls"
+  mkdir -p "$HLS_OUTPUT_DIR"
 
-echo "→ Creating HLS (Adaptive Streaming) version..."
-(
-ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
-  -filter_complex "[0:v]split=4[v360][v480][v720][v1080]; \
-    [v360]scale=640:360[v360out]; \
-    [v480]scale=854:480[v480out]; \
-    [v720]scale=1280:720[v720out]; \
-    [v1080]scale=1920:1080[v1080out]" \
-  -map "[v360out]" -c:v libx264 -b:v 400k -maxrate 500k -bufsize 1000k \
-  -map "[v480out]" -c:v libx264 -b:v 700k -maxrate 800k -bufsize 1600k \
-  -map "[v720out]" -c:v libx264 -b:v 1500k -maxrate 1800k -bufsize 3600k \
-  -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
-  $AUDIO_FLAGS \
-  -var_stream_map "v:0,agroup:vid v:1,agroup:vid v:2,agroup:vid v:3,agroup:vid${AUDIO_MAP}" \
-  -master_pl_name master.m3u8 -hls_time 4 -hls_playlist_type vod \
-  -f hls "$HLS_OUTPUT_DIR/%v/playlist.m3u8" > /dev/null 2>&1
-) &
-show_spinner $! "  Processing HLS streams"
+  echo "→ Creating HLS (Adaptive Streaming) version..."
+  (
+  ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -sc_threshold 0 \
+    -filter_complex "[0:v]split=4[v360][v480][v720][v1080]; \
+      [v360]scale=640:360[v360out]; \
+      [v480]scale=854:480[v480out]; \
+      [v720]scale=1280:720[v720out]; \
+      [v1080]scale=1920:1080[v1080out]" \
+    -map "[v360out]" -c:v libx264 -b:v 400k -maxrate 500k -bufsize 1000k \
+    -map "[v480out]" -c:v libx264 -b:v 700k -maxrate 800k -bufsize 1600k \
+    -map "[v720out]" -c:v libx264 -b:v 1500k -maxrate 1800k -bufsize 3600k \
+    -map "[v1080out]" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
+    $AUDIO_FLAGS \
+    -var_stream_map "v:0,agroup:vid v:1,agroup:vid v:2,agroup:vid v:3,agroup:vid${AUDIO_MAP}" \
+    -master_pl_name master.m3u8 -hls_time 4 -hls_playlist_type vod \
+    -f hls "$HLS_OUTPUT_DIR/%v/playlist.m3u8" > /dev/null 2>&1
+  ) &
+  show_spinner $! "  Processing HLS streams"
 
-echo "✅ HLS version created successfully at $HLS_OUTPUT_DIR"
+  echo "✅ HLS version created successfully at $HLS_OUTPUT_DIR"
+else
+  HLS_OUTPUT_DIR="(not generated)"
+fi
 
 # ---- DASH Encoding ----
-DASH_OUTPUT_DIR="${OUTPUT_DIR}/dash"
-mkdir -p "$DASH_OUTPUT_DIR"
+if [ "$GENERATE_DASH" = true ]; then
+  DASH_OUTPUT_DIR="${OUTPUT_DIR}/dash"
+  mkdir -p "$DASH_OUTPUT_DIR"
 
-echo "→ Creating DASH (Adaptive Streaming)..."
-(
-ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -keyint_min 48 -sc_threshold 0 \
-  -vf "scale=640:360" -c:v libx264 -b:v 400k -maxrate 500k -bufsize 1000k -map 0:v -map 0:v -map 0:v -map 0:v \
-  -vf "scale=854:480" -c:v libx264 -b:v 700k -maxrate 800k -bufsize 1600k \
-  -vf "scale=1280:720" -c:v libx264 -b:v 1500k -maxrate 1800k -bufsize 3600k \
-  -vf "scale=1920:1080" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
-  $AUDIO_FLAGS \
-  -f dash -use_timeline 1 -use_template 1 -seg_duration 4 -hls_playlist 1 \
-  "$DASH_OUTPUT_DIR/manifest.mpd" > /dev/null 2>&1
-) &
-show_spinner $! "  Processing DASH streams"
+  echo "→ Creating DASH (Adaptive Streaming)..."
+  (
+  ffmpeg -y -i "$INPUT_FILE" -preset veryfast -g 48 -keyint_min 48 -sc_threshold 0 \
+    -vf "scale=640:360" -c:v libx264 -b:v 400k -maxrate 500k -bufsize 1000k -map 0:v -map 0:v -map 0:v -map 0:v \
+    -vf "scale=854:480" -c:v libx264 -b:v 700k -maxrate 800k -bufsize 1600k \
+    -vf "scale=1280:720" -c:v libx264 -b:v 1500k -maxrate 1800k -bufsize 3600k \
+    -vf "scale=1920:1080" -c:v libx264 -b:v 2500k -maxrate 3000k -bufsize 6000k \
+    $AUDIO_FLAGS \
+    -f dash -use_timeline 1 -use_template 1 -seg_duration 4 -hls_playlist 1 \
+    "$DASH_OUTPUT_DIR/manifest.mpd" > /dev/null 2>&1
+  ) &
+  show_spinner $! "  Processing DASH streams"
 
-echo "✅ DASH version created successfully at $DASH_OUTPUT_DIR"
+  echo "✅ DASH version created successfully at $DASH_OUTPUT_DIR"
+else
+  DASH_OUTPUT_DIR="(not generated)"
+fi
 
-# ---- Extract Poster Image (First Frame) ----
-POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster.jpg"
-echo "→ Extracting poster image from first frame..."
-ffmpeg -y -i "$INPUT_FILE" -vf "select=eq(n\,0)" -frames:v 1 -update 1 -q:v 2 -pix_fmt yuvj420p "$POSTER_FULL" > /dev/null 2>&1 &
-show_spinner $! "  Extracting poster"
+# ---- Extract Poster Images ----
+if [ "$GENERATE_POSTERS" = true ]; then
+  POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster.jpg"
+  echo "→ Extracting poster image from first frame..."
+  ffmpeg -y -i "$INPUT_FILE" -vf "select=eq(n\,0)" -frames:v 1 -update 1 -q:v 2 -pix_fmt yuvj420p "$POSTER_FULL" > /dev/null 2>&1 &
+  show_spinner $! "  Extracting poster"
 
-# ---- Generate Multiple Poster Sizes ----
-echo "→ Creating resized poster images..."
+  # ---- Generate Multiple Poster Sizes ----
+  echo "→ Creating resized poster images..."
 
-POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080p.jpg"
-POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720p.jpg"
-POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480p.jpg"
-POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360p.jpg"
+  POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080p.jpg"
+  POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720p.jpg"
+  POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480p.jpg"
+  POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360p.jpg"
 
-# Process poster images in parallel - match dimensions used in HLS/DASH
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:1080" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=1280:720" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=854:480" -frames:v 1 -update 1 -q:v 2 "$POSTER_480" > /dev/null 2>&1) &
-(ffmpeg -y -i "$POSTER_FULL" -vf "scale=640:360" -frames:v 1 -update 1 -q:v 2 "$POSTER_360" > /dev/null 2>&1) &
-wait
-
-# Check if imagemin is installed
-if command -v imagemin &> /dev/null; then
-  echo "→ Optimizing poster images with imagemin/mozjpeg..."
-
-  OPTIMIZED_POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster-optimized.jpg"
-  OPTIMIZED_POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080p-optimized.jpg"
-  OPTIMIZED_POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720p-optimized.jpg"
-  OPTIMIZED_POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480p-optimized.jpg"
-  OPTIMIZED_POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360p-optimized.jpg"
-
-  # Use imagemin with mozjpeg to optimize all poster images (in parallel)
-  (imagemin "$POSTER_FULL" --plugin=mozjpeg > "$OPTIMIZED_POSTER_FULL" 2>/dev/null) &
-  PID1=$!
-  (imagemin "$POSTER_1080" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1080" 2>/dev/null) &
-  PID2=$!
-  (imagemin "$POSTER_720" --plugin=mozjpeg > "$OPTIMIZED_POSTER_720" 2>/dev/null) &
-  PID3=$!
-  (imagemin "$POSTER_480" --plugin=mozjpeg > "$OPTIMIZED_POSTER_480" 2>/dev/null) &
-  PID4=$!
-  (imagemin "$POSTER_360" --plugin=mozjpeg > "$OPTIMIZED_POSTER_360" 2>/dev/null) &
-  PID5=$!
-
-  # Show combined progress spinner
-  show_spinner "$PID1 $PID2 $PID3 $PID4 $PID5" "  Optimizing images"
+  # Process poster images in parallel - match dimensions used in HLS/DASH
+  (ffmpeg -y -i "$POSTER_FULL" -vf "scale=1920:1080" -frames:v 1 -update 1 -q:v 2 "$POSTER_1080" > /dev/null 2>&1) &
+  (ffmpeg -y -i "$POSTER_FULL" -vf "scale=1280:720" -frames:v 1 -update 1 -q:v 2 "$POSTER_720" > /dev/null 2>&1) &
+  (ffmpeg -y -i "$POSTER_FULL" -vf "scale=854:480" -frames:v 1 -update 1 -q:v 2 "$POSTER_480" > /dev/null 2>&1) &
+  (ffmpeg -y -i "$POSTER_FULL" -vf "scale=640:360" -frames:v 1 -update 1 -q:v 2 "$POSTER_360" > /dev/null 2>&1) &
   wait
 
-  # Replace original files with optimized versions if they're smaller
-  TOTAL_SAVED=0
-  TOTAL_ORIGINAL=0
+  # Check if imagemin is installed
+  if command -v imagemin &> /dev/null; then
+    echo "→ Optimizing poster images with imagemin/mozjpeg..."
 
-  for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_1080:$OPTIMIZED_POSTER_1080" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_480:$OPTIMIZED_POSTER_480" "$POSTER_360:$OPTIMIZED_POSTER_360"; do
-    original="${img_pair%%:*}"
-    optimized="${img_pair##*:}"
+    OPTIMIZED_POSTER_FULL="${OUTPUT_DIR}/${FILENAME}-poster-optimized.jpg"
+    OPTIMIZED_POSTER_1080="${OUTPUT_DIR}/${FILENAME}-poster-1080p-optimized.jpg"
+    OPTIMIZED_POSTER_720="${OUTPUT_DIR}/${FILENAME}-poster-720p-optimized.jpg"
+    OPTIMIZED_POSTER_480="${OUTPUT_DIR}/${FILENAME}-poster-480p-optimized.jpg"
+    OPTIMIZED_POSTER_360="${OUTPUT_DIR}/${FILENAME}-poster-360p-optimized.jpg"
 
-    # Get file sizes
-    original_size=$(stat -f%z "$original")
-    TOTAL_ORIGINAL=$((TOTAL_ORIGINAL + original_size))
+    # Use imagemin with mozjpeg to optimize all poster images (in parallel)
+    (imagemin "$POSTER_FULL" --plugin=mozjpeg > "$OPTIMIZED_POSTER_FULL" 2>/dev/null) &
+    PID1=$!
+    (imagemin "$POSTER_1080" --plugin=mozjpeg > "$OPTIMIZED_POSTER_1080" 2>/dev/null) &
+    PID2=$!
+    (imagemin "$POSTER_720" --plugin=mozjpeg > "$OPTIMIZED_POSTER_720" 2>/dev/null) &
+    PID3=$!
+    (imagemin "$POSTER_480" --plugin=mozjpeg > "$OPTIMIZED_POSTER_480" 2>/dev/null) &
+    PID4=$!
+    (imagemin "$POSTER_360" --plugin=mozjpeg > "$OPTIMIZED_POSTER_360" 2>/dev/null) &
+    PID5=$!
 
-    if [[ -f "$optimized" ]]; then
-      optimized_size=$(stat -f%z "$optimized")
+    # Show combined progress spinner
+    show_spinner "$PID1 $PID2 $PID3 $PID4 $PID5" "  Optimizing images"
+    wait
 
-      # Replace if optimized is smaller
-      if [[ $optimized_size -lt $original_size ]]; then
-        saved=$((original_size - optimized_size))
-        TOTAL_SAVED=$((TOTAL_SAVED + saved))
-        mv "$optimized" "$original"
-      else
-        rm "$optimized"
+    # Replace original files with optimized versions if they're smaller
+    TOTAL_SAVED=0
+    TOTAL_ORIGINAL=0
+
+    for img_pair in "$POSTER_FULL:$OPTIMIZED_POSTER_FULL" "$POSTER_1080:$OPTIMIZED_POSTER_1080" "$POSTER_720:$OPTIMIZED_POSTER_720" "$POSTER_480:$OPTIMIZED_POSTER_480" "$POSTER_360:$OPTIMIZED_POSTER_360"; do
+      original="${img_pair%%:*}"
+      optimized="${img_pair##*:}"
+
+      # Get file sizes
+      original_size=$(stat -f%z "$original")
+      TOTAL_ORIGINAL=$((TOTAL_ORIGINAL + original_size))
+
+      if [[ -f "$optimized" ]]; then
+        optimized_size=$(stat -f%z "$optimized")
+
+        # Replace if optimized is smaller
+        if [[ $optimized_size -lt $original_size ]]; then
+          saved=$((original_size - optimized_size))
+          TOTAL_SAVED=$((TOTAL_SAVED + saved))
+          mv "$optimized" "$original"
+        else
+          rm "$optimized"
+        fi
       fi
-    fi
-  done
+    done
 
-  # Show overall optimization results
-  if [[ $TOTAL_SAVED -gt 0 ]]; then
-    percent=$((TOTAL_SAVED * 100 / TOTAL_ORIGINAL))
-    echo "  ✓ Total image optimization: ${percent}% smaller (saved $(numfmt --to=iec-i --suffix=B $TOTAL_SAVED))"
+    # Show overall optimization results
+    if [[ $TOTAL_SAVED -gt 0 ]]; then
+      percent=$((TOTAL_SAVED * 100 / TOTAL_ORIGINAL))
+      echo "  ✓ Total image optimization: ${percent}% smaller (saved $(numfmt --to=iec-i --suffix=B $TOTAL_SAVED))"
+    else
+      echo "  ✓ Images were already optimized"
+    fi
   else
-    echo "  ✓ Images were already optimized"
+    echo "⚠️  imagemin not found. To optimize poster images, install with: npm install -g imagemin-cli imagemin-mozjpeg"
   fi
 else
-  echo "⚠️  imagemin not found. To optimize poster images, install with: npm install -g imagemin-cli imagemin-mozjpeg"
+  POSTER_1080="(not generated)"
+  POSTER_720="(not generated)"
+  POSTER_480="(not generated)"
+  POSTER_360="(not generated)"
 fi
 
 echo "✅ Video optimization complete!"
@@ -233,3 +436,9 @@ echo "  - 360p MP4: $H264_360_OUTPUT"
 echo "  - HLS: $HLS_OUTPUT_DIR/master.m3u8 (1080p, 720p, 480p, 360p)"
 echo "  - DASH: $DASH_OUTPUT_DIR/manifest.mpd (1080p, 720p, 480p, 360p)"
 echo "  - Posters: $POSTER_1080, $POSTER_720, $POSTER_480, $POSTER_360"
+
+# Show which variants were actually generated
+if [ "$VARIANTS_SPECIFIED" = true ]; then
+  echo
+  echo "Note: Only specified variants were generated."
+fi
