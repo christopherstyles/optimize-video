@@ -32,6 +32,8 @@ bin/optimize_video <input_file>
 
 > **Tip**: drop this script into a `bin` directory (i.e. `bin/optimize_video`), and make it executable with `chmod +x bin/optimize_video`.
 
+See all options with `bin/optimize_video -h`.
+
 ## 📂 **Output Files**
 All optimized versions are stored inside a **directory named after the input file**.
 
